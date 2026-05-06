@@ -16,7 +16,7 @@ const server = http.createServer((req, res) => {
     <html>
       <head><title>Node CI/CD Demo</title></head>
       <body>
-        <h1>Hello from Node.js!</h1>
+        <h1>Hello from Coimbatore !!</h1>
         <p>Version: <strong>${VERSION}</strong></p>
         <p>Running inside Docker &amp; deployed via GitHub Actions.</p>
       </body>
