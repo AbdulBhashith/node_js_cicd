@@ -1,0 +1,82 @@
+name: Build & Push Docker Image
+
+# ── Trigger ──────────────────────────────────────────────────────────────────
+# Runs on every push to main (and PRs for the build-test job only).
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+# ── Environment variables ─────────────────────────────────────────────────────
+env:
+  DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+  IMAGE_NAME: ${{ secrets.DOCKERHUB_USERNAME }}/node-cicd-demo
+
+jobs:
+  # ── Job 1: Build & test ──────────────────────────────────────────────────
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: ⬇️  Checkout source
+        uses: actions/checkout@v4
+
+      - name: 🟢  Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: 📦  Install dependencies
+        run: npm ci --omit=dev
+
+      - name: 🧪  Run tests
+        run: npm test
+
+  # ── Job 2: Build Docker image & push to Docker Hub ───────────────────────
+  docker-build-push:
+    name: Docker Build & Push
+    runs-on: ubuntu-latest
+    needs: build-and-test          # only runs after tests pass
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: ⬇️  Checkout source
+        uses: actions/checkout@v4
+
+      # Generate a short SHA tag, e.g. "sha-a3f5b2c"
+      - name: 🏷️  Set image tag
+        id: meta
+        run: |
+          SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+          echo "tag=sha-${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: 🔑  Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Enable multi-platform builds and layer caching
+      - name: 🛠️  Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: 🐳  Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          # Tag with both the commit SHA and "latest"
+          tags: |
+            ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}
+            ${{ env.IMAGE_NAME }}:latest
+          # Cache layers in GitHub Actions cache for faster builds
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            APP_VERSION=${{ steps.meta.outputs.tag }}
+
+      - name: ✅  Print image digest
+        run: echo "Image pushed → ${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tag }}"
